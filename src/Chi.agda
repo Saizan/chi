@@ -26,9 +26,14 @@ mutual
     rec    : Var → Exp → Exp
     var    : Var → Exp
     const  : Const → List Exp → Exp
+    halts  : Exp → Exp
 
   data Br : Set where
     branch : Const → List Var → Exp → Br
+
+
+postulate
+  code : Exp → Exp
 
 -- Substitution.
 
@@ -48,6 +53,7 @@ mutual
 
   var y [ x ← e′ ]       = if x V.≟ y then e′ else var y
   const c es  [ x ← e′ ] = const c (es [ x ← e′ ]⋆)
+  halts e     [ x ← e′ ] = halts (e [ x ← e′ ])
 
   _[_←_]B : Br → Var → Exp → Br
   branch c xs e [ x ← e′ ]B with V.member x xs
@@ -98,3 +104,44 @@ mutual
   data _⟶⋆_ : List Exp → List Exp → Set where
     []  : [] ⟶⋆ []
     _∷_ : ∀ {e es v vs} → e ⟶ v → es ⟶⋆ vs → e ∷ es ⟶⋆ v ∷ vs
+
+
+
+
+infix 4 _/_⟶_ _/_⟶⋆_
+
+open import SizeLt
+
+postulate
+  `true `false : Exp
+
+mutual
+
+  data _/_⟶_ (D : Exp → Set) : Exp → Exp → Set where
+    apply  : ∀ {e₁ e₂ x e v₂ v} →
+             D / e₁ ⟶ lambda x e → D / e₂ ⟶ v₂ → D / e [ x ← v₂ ] ⟶ v →
+             D / apply e₁ e₂ ⟶ v
+    case   : ∀ {e bs c es xs e′ e″ v} →
+             D / e ⟶ const c es → Lookup c bs xs e′ →
+             e′ [ xs ← es ]↦ e″ → D / e″ ⟶ v →
+             D / case e bs ⟶ v
+    rec    : ∀ {x e v} → D / e [ x ← rec x e ] ⟶ v → D / rec x e ⟶ v
+    lambda : ∀ {x e} → D / lambda x e ⟶ lambda x e
+    const  : ∀ {c es vs} → D / es ⟶⋆ vs → D / const c es ⟶ const c vs
+    halts1 : ∀ {e e′ v} → D / e ⟶ code e′ → D / e′ ⟶ v → D / halts e ⟶ `true
+    halts2 : ∀ {e e′} → D / e ⟶ code e′ → D e → D / halts e ⟶ `false
+
+  data _/_⟶⋆_ (i : Exp → Set) : List Exp → List Exp → Set where
+    []  : i / [] ⟶⋆ []
+    _∷_ : ∀ {e es v vs} → i / e ⟶ v → i / es ⟶⋆ vs → i / e ∷ es ⟶⋆ v ∷ vs
+
+mutual
+
+  _/′_⟶_ : Size → Exp → Exp → Set
+  i /′ e ⟶ v = Diverge i / e ⟶ v
+
+  Diverge : Size → Exp → Set
+  Diverge i e = ∀ (j : SizeLt i){v} → DivergeLt j / e ⟶ v → ⊥ {lzero}
+
+  DivergeLt : {i : Size} (j : SizeLt i) → Exp → Set
+  DivergeLt (lt j) e = Diverge j e
